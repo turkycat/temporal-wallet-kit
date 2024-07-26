@@ -1,51 +1,65 @@
 import { useState } from "react";
-import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/tauri";
 import "./App.css";
 
 function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+  const [balanceMessage, setBalanceMessage] = useState("");
+  const [receive, setReceive] = useState("");
+  const [change, setChange] = useState("");
+  const [isTestnet, setIsTestnet] = useState(false);
 
-  async function greet() {
+  async function fetchBalance() {
     // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
-    setGreetMsg(await invoke("greet", { name }));
+    setBalanceMessage(
+      await invoke("fetch_balance", { receive, change, isTestnet })
+    );
   }
 
   return (
     <div className="container">
-      <h1>Welcome to Tauri!</h1>
+      <h1>Temporal Wallet Kit</h1>
+      <p>
+        This is a simple React app that uses Tauri to interact with a Rust
+        backend. You can easily check balances with this app. It could be easily
+        extended to list transactions, and a simple sweep recovery feature that
+        could require users to type their mnemonics for simple empergency
+        recovery.
+      </p>
 
       <div className="row">
-        <a href="https://vitejs.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://reactjs.org" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
+        <img src="/bitcoin.png" className="logo bitcoin" alt="bitcoin" />
       </div>
-
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
 
       <form
         className="row"
         onSubmit={(e) => {
           e.preventDefault();
-          greet();
+          fetchBalance();
         }}
       >
         <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
+          id="receive-input"
+          onChange={(e) => setReceive(e.currentTarget.value)}
+          placeholder="Receive descriptor:"
         />
-        <button type="submit">Greet</button>
+        <input
+          id="change-input"
+          onChange={(e) => setChange(e.currentTarget.value)}
+          placeholder="Change descriptor:"
+        />
+        <div>
+          <input
+            type="checkbox"
+            id="testnet-checkbox"
+            checked={isTestnet}
+            onChange={(e) => setIsTestnet(e.currentTarget.checked)}
+          />
+          <label htmlFor="testnet-checkbox">is testnet</label>
+        </div>
+        <button type="submit">Submit</button>
       </form>
 
-      <p>{greetMsg}</p>
+      <p>{balanceMessage}</p>
     </div>
   );
 }
