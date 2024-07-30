@@ -4,9 +4,13 @@ import "./App.css";
 
 enum DescriptorResponse {
   None = "None",
-  Invalid = "Invalid",
   Testnet = "Testnet",
   Mainnet = "Mainnet",
+}
+
+enum DescriptorType {
+  Receive = "Receive",
+  Change = "Change",
 }
 
 function App() {
@@ -17,8 +21,9 @@ function App() {
   const [isChangeValid, setIsChangeValid] = useState(false);
   const receiveForm = useRef<HTMLFormElement>(null);
   const changeForm = useRef<HTMLFormElement>(null);
-
-  let receiveNetwork = DescriptorResponse.None;
+  const [receiveNetwork, setReceiveNetwork] = useState<DescriptorResponse>(
+    DescriptorResponse.None
+  );
 
   async function fetchBalance() {
     // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
@@ -37,28 +42,32 @@ function App() {
   }
 
   async function validateReceive() {
-    const res = await invoke("set_receive", { receive });
+    const res = await invoke("verify_descriptor", {
+      descriptor: receive,
+    }).catch(() => {
+      setIsReceiveValid(false);
+      setMessage(
+        `The receive descriptor you've entered is not valid, verify the value and try again.`
+      );
+      return;
+    });
 
     let msg: string | undefined = undefined;
     switch (res) {
       case DescriptorResponse.None:
         setIsReceiveValid(false);
         setMessage(
-          "Something unexpected went wrong with the descriptor, verify the value and try again."
+          "Something unexpected went wrong with the receive descriptor, verify the value and try again."
         );
         break;
-      case DescriptorResponse.Invalid:
-        setIsReceiveValid(false);
-        setMessage("The receive descriptor you've entered is not valid.");
-        break;
 
-      // @ts-ignore(7029)
+      // @ts-ignore(7029) - intentional fallthrough
       case DescriptorResponse.Testnet:
         msg =
           "The receive descriptor you've entered valid for the test network.";
       case DescriptorResponse.Mainnet:
         msg = msg || "The receive descriptor you've entered is valid!";
-        receiveNetwork = res;
+        setReceiveNetwork(res);
         setMessage(msg);
         setIsReceiveValid(true);
         break;
@@ -66,21 +75,40 @@ function App() {
   }
 
   async function validateChange() {
-    const res = await invoke("set_change", { change });
+    console.log("change", change);
+    const res = await invoke("verify_descriptor", { descriptor: change }).catch(
+      () => {
+        setIsChangeValid(false);
+        setMessage(
+          "The change descriptor you've entered is not valid, verify the value and try again."
+        );
+        return;
+      }
+    );
+
+    let msg: string | undefined = undefined;
     switch (res) {
       case DescriptorResponse.None:
         setIsChangeValid(false);
         setMessage(
-          "Something unexpected went wrong with the descriptor, verify the value and try again."
+          "Something unexpected went wrong with the change descriptor, verify the value and try again."
         );
         break;
-      case DescriptorResponse.Invalid:
-        setIsReceiveValid(false);
-        setMessage("The change descriptor you've entered is not valid.");
-        break;
+
+      // @ts-ignore(7029) - intentional fallthrough
       case DescriptorResponse.Testnet:
       case DescriptorResponse.Mainnet:
-        receiveNetwork = res;
+        console.log(receiveNetwork, res);
+        if (res !== receiveNetwork) {
+          setIsChangeValid(false);
+          setMessage(
+            "The change descriptor you've provided is valid but incompatible with the receive descriptor, verify the value and try again."
+          );
+          break;
+        }
+
+        msg = msg || "The descriptors you've entered are both valid!";
+        setMessage(msg);
         setIsChangeValid(true);
         break;
     }
@@ -145,9 +173,9 @@ function App() {
 
       {isReceiveValid ? (
         <div>
-          {/* <button className="action" type="button" onClick={fetchBalance}>
+          <button className="action" type="button" onClick={fetchBalance}>
             Get Balance
-          </button> */}
+          </button>
           <button className="action" type="button" onClick={reset}>
             Reset
           </button>
