@@ -1,10 +1,64 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use bdk::bitcoin::secp256k1::Secp256k1;
+use bdk::bitcoin::Network;
+use bdk::descriptor::{ExtendedDescriptor, IntoWalletDescriptor};
+use std::sync::{Arc, Mutex};
+use tauri::State;
+
 use bdk;
 use bdk::blockchain::ElectrumBlockchain;
 use bdk::electrum_client::Client;
 use bdk::SyncOptions;
+
+#[derive(Default, serde::Serialize)]
+enum DescriptorResponse {
+    #[default]
+    None,
+    Invalid,
+    Testnet,
+    Mainnet,
+}
+
+#[derive(Default)]
+struct AppState {
+    receive: String,
+    change: String,
+}
+
+#[tauri::command]
+fn set_receive(state: State<Arc<Mutex<AppState>>>, receive: String) -> DescriptorResponse {
+    let mut app_state = match state.lock() {
+        Ok(state) => state,
+        Err(_) => return DescriptorResponse::None,
+    };
+
+    let secp = Secp256k1::new();
+
+    let is_testnet = receive.contains("tpub") || receive.contains("tprv");
+    let network = match is_testnet {
+        true => Network::Testnet,
+        false => Network::Bitcoin,
+    };
+
+    match receive.into_wallet_descriptor(&secp, network) {
+        Ok(_) => {}
+        Err(_) => return DescriptorResponse::Invalid,
+    };
+
+    app_state.receive = receive;
+    match is_testnet {
+        true => DescriptorResponse::Testnet,
+        false => DescriptorResponse::Mainnet,
+    }
+}
+
+#[tauri::command]
+fn set_change(state: State<Arc<Mutex<AppState>>>, change: String) {
+    let mut app_state = state.lock().unwrap();
+    app_state.change = change;
+}
 
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
 #[tauri::command]
@@ -41,8 +95,15 @@ fn fetch_balance(receive: &str, change: &str) -> String {
 }
 
 fn main() {
+    let app_state: Arc<Mutex<AppState>> = Arc::new(Mutex::new(AppState::default()));
+
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![fetch_balance])
+        .manage(app_state)
+        .invoke_handler(tauri::generate_handler![
+            set_receive,
+            set_change,
+            fetch_balance
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

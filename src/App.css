@@ -61,6 +61,10 @@ h1 {
   text-align: center;
 }
 
+input {
+  width: 40%;
+}
+
 input,
 button {
   border-radius: 8px;
@@ -86,6 +90,17 @@ button:hover {
 button:active {
   border-color: #396cd8;
   background-color: #e8e8e8;
+}
+button:disabled {
+  background-color: #525252;
+  color: #a0a0a0;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+button.action {
+  align-self: center;
+  width: 15%;
 }
 
 input,
