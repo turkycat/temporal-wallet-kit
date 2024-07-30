@@ -3,14 +3,15 @@
 
 use bdk::bitcoin::secp256k1::Secp256k1;
 use bdk::bitcoin::Network;
+use bdk::database::MemoryDatabase;
 use bdk::descriptor::{ExtendedDescriptor, IntoWalletDescriptor};
 use std::sync::{Arc, Mutex};
 use tauri::State;
 
-use bdk;
 use bdk::blockchain::ElectrumBlockchain;
 use bdk::electrum_client::Client;
 use bdk::SyncOptions;
+use bdk::{self, wallet};
 
 #[derive(Default, serde::Serialize)]
 enum DescriptorResponse {
@@ -20,11 +21,17 @@ enum DescriptorResponse {
     Mainnet,
 }
 
-// currently unused but that'll change soon
+// TODO: add a way to manually set the network
 #[derive(Default)]
 struct AppState {
-    receive: String,
-    change: String,
+    wallet: Option<bdk::Wallet<MemoryDatabase>>,
+    network: Option<Network>,
+}
+
+#[tauri::command]
+fn reset(state: State<Mutex<AppState>>) {
+    let mut state = state.lock().unwrap();
+    state.wallet = None;
 }
 
 #[tauri::command]
@@ -50,9 +57,14 @@ fn verify_descriptor(descriptor: String) -> Result<DescriptorResponse, String> {
     })
 }
 
-// Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
 #[tauri::command]
-fn fetch_balance(receive: &str, change: &str) -> Result<String, String> {
+fn set_wallet(
+    state: State<Mutex<AppState>>,
+    receive: String,
+    change: String,
+) -> Result<(), String> {
+    let mut state = state.lock().unwrap();
+
     // TODO: this isn't sufficient since some descriptors are valid for both mainnet and testnet
     // example: wpkh(03d99179113327fc2a8349b4d47d1eac3033b51cbddcb59654c894320850500d4e)
     let is_testnet = receive.contains("tpub") || receive.contains("tprv");
@@ -82,9 +94,22 @@ fn fetch_balance(receive: &str, change: &str) -> Result<String, String> {
         Err(e) => return Err(e.to_string()),
     };
 
-    let connection = match is_testnet {
-        true => "electrum.blockstream.info:60001",
-        false => "blockstream.info:110",
+    state.wallet = Some(wallet);
+    state.network = Some(network);
+    Ok(())
+}
+
+#[tauri::command]
+fn fetch_balance(state: State<Mutex<AppState>>) -> Result<String, String> {
+    let mut state = state.lock().unwrap();
+
+    let network = state.network.as_ref().ok_or("No network set")?.to_owned();
+    let wallet = state.wallet.as_ref().ok_or("No wallet set")?;
+
+    let connection = match network {
+        Network::Testnet => "electrum.blockstream.info:60001",
+        Network::Bitcoin => "blockstream.info:110",
+        _ => return Err("Unsupported network".to_string()),
     };
 
     let client = Client::new(connection).unwrap();
@@ -95,18 +120,29 @@ fn fetch_balance(receive: &str, change: &str) -> Result<String, String> {
 
     Ok(format!(
         "This {} wallet has a confirmed balance of {} satoshis with {} transactions",
-        if is_testnet { "testnet" } else { "mainnet" },
+        if network == Network::Testnet {
+            "testnet"
+        } else {
+            "mainnet"
+        },
         balance.confirmed,
         transactions.len()
     ))
 }
 
 fn main() {
-    let app_state: Arc<Mutex<AppState>> = Arc::new(Mutex::new(AppState::default()));
+    // let app_state: Arc<Mutex<AppState>> = Arc::new(Mutex::new(AppState::default()));
+    let app_state: Mutex<AppState> = Mutex::new(AppState::default());
+    // let app_state = AppState::default();
 
     tauri::Builder::default()
         .manage(app_state)
-        .invoke_handler(tauri::generate_handler![verify_descriptor, fetch_balance])
+        .invoke_handler(tauri::generate_handler![
+            fetch_balance,
+            reset,
+            set_wallet,
+            verify_descriptor
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
